@@ -14,6 +14,8 @@ type Post struct {
 	Likes      int
 }
 
+const PrivateKey = "htm23Cv56"
+
 var posts = []Post{}
 
 func getAllPost(w http.ResponseWriter, r *http.Request) {
@@ -52,13 +54,24 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func auth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token != PrivateKey {
+			http.Error(w, "Unauthorized User", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 
 	mux := http.NewServeMux()
 
 	// Routes
 	mux.Handle("GET /posts", loggingMiddleware(http.HandlerFunc(getAllPost)))
-	mux.Handle("POST /posts", loggingMiddleware(http.HandlerFunc(createPost)))
+	mux.Handle("POST /posts", loggingMiddleware(auth(http.HandlerFunc(createPost))))
 
 	srv := &http.Server{
 		Addr:         ":8080",
