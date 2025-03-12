@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Post struct {
@@ -65,13 +67,58 @@ func auth(next http.Handler) http.Handler {
 	})
 }
 
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	var payload Credentials
+	err := json.NewDecoder(r.Body).Decode(&payload)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if payload.Username != "Wasay123" && payload.Password != "Wasay786@" {
+		http.Error(w, "Invalid Credentials", http.StatusUnauthorized)
+		return
+	}
+	token, err := generateJWT(payload.Username)
+	if err != nil {
+		http.Error(w, "Error generating token", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	w.WriteHeader(http.StatusOK)
+}
+
+func jwtAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token_string := r.Header.Get("Authorization")
+
+		if token_string == "" {
+			http.Error(w, "Missing token", http.StatusUnauthorized)
+			return
+		}
+
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(token_string, &claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecret, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid Token", http.StatusUnauthorized)
+			return
+		}
+
+		username := claims["username"].(string)
+		log.Printf("Authenticated User: %v", username)
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 
 	mux := http.NewServeMux()
 
 	// Routes
 	mux.Handle("GET /posts", loggingMiddleware(http.HandlerFunc(getAllPost)))
-	mux.Handle("POST /posts", loggingMiddleware(auth(http.HandlerFunc(createPost))))
+	mux.Handle("POST /posts", loggingMiddleware(jwtAuthMiddleware(http.HandlerFunc(createPost))))
+	mux.Handle("POST /account", loggingMiddleware(http.HandlerFunc(LoginHandler)))
 
 	srv := &http.Server{
 		Addr:         ":8080",
